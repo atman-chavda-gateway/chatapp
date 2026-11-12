@@ -51,4 +51,4 @@ endif()
 # Application
 add_executable(chatapp src/main.cpp)
 
-target_link_libraries(chatapp PRIVATE asio)
+target_link_libraries(chatapp PRIVATE asio stdc++exp)

@@ -1,18 +1,62 @@
-#include <iostream>
 #include <asio.hpp>
+#include <vector>
+#include <memory>
+#include <thread>
+#include <mutex>
+#include <print>
+
+#include "client.hpp"
 
 int main()
 {
     asio::io_context io;
 
-    asio::ip::tcp::endpoint endpoint(asio::ip::tcp::v4(), 8080);
+    asio::ip::tcp::acceptor acceptor(
+        io,
+        {asio::ip::tcp::v4(), 8080}
+    );
 
-    asio::ip::tcp::acceptor acceptor(io, endpoint);
+    std::vector<std::shared_ptr<Client>> clients;
+    std::mutex clients_mutex;
 
-    asio::ip::tcp::socket client_socket(io);
+    std::println("Server listening on port 8080");
 
-    acceptor.accept(client_socket);
+    while (true)
+    {
+        asio::ip::tcp::socket socket = acceptor.accept();
 
-    std::cout << "ASIO initialized" << std::endl;
-    return 0;
+        auto client = std::make_shared<Client>(
+            std::move(socket),
+            [&clients, &clients_mutex](Client* disconnected)
+            {
+                std::lock_guard lock(clients_mutex);
+
+                std::erase_if(clients, [disconnected](const auto& c)
+                {
+                    return c.get() == disconnected;
+                });
+
+                std::println(
+                    "Client removed. Remaining: {}",
+                    clients.size()
+                );
+            }
+        );
+
+        {
+            std::lock_guard lock(clients_mutex);
+
+            clients.push_back(client);
+
+            std::println(
+                "Client connected. Total: {}",
+                clients.size()
+            );
+        }
+
+        std::jthread([client]
+        {
+            client->start_reading();
+        }).detach();
+    }
 }
