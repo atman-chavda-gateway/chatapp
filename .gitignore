@@ -1,0 +1,7 @@
+# Build outputs and FetchContent dependencies
+build/
+out/
+
+# Editor and clangd cache files
+.cache/
+.vscode/

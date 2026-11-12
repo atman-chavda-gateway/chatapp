@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: [-std=c++23, -Wall, -Wextra, -Wpedantic, --target=x86_64-w64-windows-gnu]
