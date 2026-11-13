@@ -28,6 +28,35 @@ int main()
 
         auto client = std::make_shared<Client>(
             std::move(socket),
+            
+            [&clients, &clients_mutex](Client* connected)
+            {
+                std::lock_guard lock(clients_mutex);
+                
+                clients.push_back(connected->shared_from_this());
+
+                std::println("Client connected: {}. Total: {}", connected->username(), clients.size());
+            },
+
+            [&clients, &clients_mutex, &broadcast_mutex](std::string_view username, std::string_view message)
+            {
+                std::string formatted_message = std::string(username) + ": " + std::string(message);
+                
+                std::lock_guard broadcast_lock(broadcast_mutex);
+                
+                std::vector<std::shared_ptr<Client>> recipients;
+                
+                {
+                    std::lock_guard lock(clients_mutex);
+                    recipients = clients; 
+                }
+                
+                for(const auto& recipient : recipients)
+                {
+                    recipient->send_message(formatted_message);
+                }
+            },
+
             [&clients, &clients_mutex](Client* disconnected)
             {
                 std::lock_guard lock(clients_mutex);
@@ -41,41 +70,10 @@ int main()
                     "Client removed. Remaining: {}",
                     clients.size()
                 );
-            },
-
-            [&clients, &clients_mutex, &broadcast_mutex](std::string_view username, std::string_view message)
-            {
-                std::string formatted_message = std::string(username) + ": " + std::string(message);
-
-                std::lock_guard broadcast_lock(broadcast_mutex);
-                
-                std::vector<std::shared_ptr<Client>> recipients;
-
-                {
-                    std::lock_guard lock(clients_mutex);
-                    recipients = clients; 
-                }
-                
-                for(const auto& recipient : recipients)
-                {
-                    recipient->send_message(formatted_message);
-                }
             }
         );
 
-        {
-            std::lock_guard lock(clients_mutex);
-
-            clients.push_back(client);
-
-            std::println(
-                "Client connected. Total: {}",
-                clients.size()
-            );
-        }
-
-        std::jthread([client]
-        {
+        std::jthread([client] {
             client->start_reading();
         }).detach();
     }

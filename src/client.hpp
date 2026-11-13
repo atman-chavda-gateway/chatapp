@@ -8,25 +8,31 @@
 #include <string_view>
 #include <utility>
 #include <string>
+#include <memory>
 
-class Client
+class Client : public std::enable_shared_from_this<Client>
 {
 private:
     asio::ip::tcp::socket socket_;
-    std::move_only_function<void(Client*)> on_disconnect_; // C++23 upgrade
-    std::mutex write_mutex_;
+    std::move_only_function<void(Client*)> on_connect_;
     std::move_only_function<void(std::string_view, std::string_view)> on_message_;
+    std::move_only_function<void(Client*)> on_disconnect_; // C++23 upgrade
+    
+    std::mutex write_mutex_;
+    
     std::string username_;
-
-public:
+    
+    public:
     Client(
         asio::ip::tcp::socket socket,
-        std::move_only_function<void(Client*)> on_disconnect,
-        std::move_only_function<void(std::string_view, std::string_view)> on_message
+        std::move_only_function<void(Client*)> on_connect,
+        std::move_only_function<void(std::string_view, std::string_view)> on_message,
+        std::move_only_function<void(Client*)> on_disconnect
         ) : 
         socket_(std::move(socket)),
-        on_disconnect_(std::move(on_disconnect)),
-        on_message_(std::move(on_message))
+        on_connect_(std::move(on_connect)),
+        on_message_(std::move(on_message)),
+        on_disconnect_(std::move(on_disconnect))
     {
     }
 
@@ -70,6 +76,8 @@ public:
                 {
                     username_ = message;
                     username_received = true;
+                    if(on_connect_)
+                        on_connect_(this);
                     std::println("Username set to: {}", username_);
                     continue;
                 }
