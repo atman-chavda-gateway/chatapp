@@ -40,6 +40,21 @@ int main()
                     "Client removed. Remaining: {}",
                     clients.size()
                 );
+            },
+
+            [&clients, &clients_mutex](std::string_view message)
+            {
+                std::vector<std::shared_ptr<Client>> recipients;
+
+                {
+                    std::lock_guard lock(clients_mutex);
+                    recipients = clients; 
+                }
+                
+                for(const auto& recipient : recipients)
+                {
+                    recipient->send_message(message);
+                }
             }
         );
 
