@@ -1,7 +1,11 @@
-# Build outputs and FetchContent dependencies
-build/
-out/
+# CMake build directories
+**/build/
 
-# Editor and clangd cache files
-.cache/
+# VS Code
 .vscode/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
