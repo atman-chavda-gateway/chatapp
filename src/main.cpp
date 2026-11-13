@@ -1,9 +1,12 @@
 #include <asio.hpp>
-#include <vector>
 #include <memory>
-#include <thread>
 #include <mutex>
 #include <print>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <utility>
+#include <vector>
 
 #include "client.hpp"
 
@@ -28,43 +31,41 @@ int main()
 
         auto client = std::make_shared<Client>(
             std::move(socket),
-            
-            [&clients, &clients_mutex](Client* connected)
+
+            [&clients, &clients_mutex](std::shared_ptr<Client> connected)
             {
                 std::lock_guard lock(clients_mutex);
-                
-                clients.push_back(connected->shared_from_this());
 
-                std::println("Client connected: {}. Total: {}", connected->username(), clients.size());
+                std::string name = connected->username();
+                clients.push_back(std::move(connected));
+
+                std::println("Client connected: {}. Total: {}", name, clients.size());
             },
 
             [&clients, &clients_mutex, &broadcast_mutex](std::string_view username, std::string_view message)
             {
                 std::string formatted_message = std::string(username) + ": " + std::string(message);
-                
+
                 std::lock_guard broadcast_lock(broadcast_mutex);
-                
+
                 std::vector<std::shared_ptr<Client>> recipients;
-                
+
                 {
                     std::lock_guard lock(clients_mutex);
-                    recipients = clients; 
+                    recipients = clients;
                 }
-                
-                for(const auto& recipient : recipients)
+
+                for (const auto& recipient : recipients)
                 {
                     recipient->send_message(formatted_message);
                 }
             },
 
-            [&clients, &clients_mutex](Client* disconnected)
+            [&clients, &clients_mutex](std::shared_ptr<Client> disconnected)
             {
                 std::lock_guard lock(clients_mutex);
 
-                std::erase_if(clients, [disconnected](const auto& c)
-                {
-                    return c.get() == disconnected;
-                });
+                std::erase(clients, disconnected);
 
                 std::println(
                     "Client removed. Remaining: {}",
@@ -74,7 +75,7 @@ int main()
         );
 
         std::jthread([client] {
-            client->start_reading();
+            client->start_reading(client);
         }).detach();
     }
 }

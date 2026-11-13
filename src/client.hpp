@@ -3,32 +3,36 @@
 #include <asio.hpp>
 #include <array>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <print>
+#include <string>
 #include <string_view>
 #include <utility>
-#include <string>
-#include <memory>
 
-class Client : public std::enable_shared_from_this<Client>
+class Client
 {
+public:
+    using ConnectCallback = std::move_only_function<void(std::shared_ptr<Client>)>;
+    using MessageCallback = std::move_only_function<void(std::string_view, std::string_view)>;
+    using DisconnectCallback = std::move_only_function<void(std::shared_ptr<Client>)>;
+
 private:
     asio::ip::tcp::socket socket_;
-    std::move_only_function<void(Client*)> on_connect_;
-    std::move_only_function<void(std::string_view, std::string_view)> on_message_;
-    std::move_only_function<void(Client*)> on_disconnect_; // C++23 upgrade
-    
+    ConnectCallback on_connect_;
+    MessageCallback on_message_;
+    DisconnectCallback on_disconnect_;
+
     std::mutex write_mutex_;
-    
     std::string username_;
-    
-    public:
+
+public:
     Client(
         asio::ip::tcp::socket socket,
-        std::move_only_function<void(Client*)> on_connect,
-        std::move_only_function<void(std::string_view, std::string_view)> on_message,
-        std::move_only_function<void(Client*)> on_disconnect
-        ) : 
+        ConnectCallback on_connect,
+        MessageCallback on_message,
+        DisconnectCallback on_disconnect
+    ) :
         socket_(std::move(socket)),
         on_connect_(std::move(on_connect)),
         on_message_(std::move(on_message)),
@@ -41,10 +45,10 @@ private:
         return username_;
     }
 
-    void start_reading()
+    void start_reading(std::shared_ptr<Client> self)
     {
         bool username_received = false;
-        std::array<char, 1024> buffer; // Safer modern C++ array
+        std::array<char, 1024> buffer;
         std::string pending_data;
 
         while (true)
@@ -65,7 +69,7 @@ private:
             pending_data.append(buffer.data(), bytes);
 
             std::size_t newline_pos;
-            
+
             while ((newline_pos = pending_data.find('\n')) != std::string::npos)
             {
                 std::string message = pending_data.substr(0, newline_pos);
@@ -76,8 +80,8 @@ private:
                 {
                     username_ = message;
                     username_received = true;
-                    if(on_connect_)
-                        on_connect_(this);
+                    if (on_connect_)
+                        on_connect_(self);
                     std::println("Username set to: {}", username_);
                     continue;
                 }
@@ -88,7 +92,7 @@ private:
         }
 
         if (on_disconnect_)
-            on_disconnect_(this);
+            on_disconnect_(std::move(self));
     }
 
     void send_message(std::string_view message)
