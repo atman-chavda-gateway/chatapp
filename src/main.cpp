@@ -18,6 +18,7 @@ int main()
 
     std::vector<std::shared_ptr<Client>> clients;
     std::mutex clients_mutex;
+    std::mutex broadcast_mutex;
 
     std::println("Server listening on port 8080");
 
@@ -42,8 +43,10 @@ int main()
                 );
             },
 
-            [&clients, &clients_mutex](std::string_view message)
+            [&clients, &clients_mutex, &broadcast_mutex](std::string_view message)
             {
+                std::lock_guard broadcast_lock(broadcast_mutex);
+                
                 std::vector<std::shared_ptr<Client>> recipients;
 
                 {
