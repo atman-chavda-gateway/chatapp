@@ -31,6 +31,7 @@ public:
     void start_reading()
     {
         std::array<char, 1024> buffer; // Safer modern C++ array
+        std::string pending_data;
 
         while (true)
         {
@@ -47,10 +48,19 @@ public:
                 break;
             }
 
-            // Zero-copy view of the received text
-            std::string_view message(buffer.data(), bytes);
-            if(on_message_)
-                on_message_(message);
+            pending_data.append(buffer.data(), bytes);
+
+            std::size_t newline_pos;
+            
+            while ((newline_pos = pending_data.find('\n')) != std::string::npos)
+            {
+                std::string message = pending_data.substr(0, newline_pos);
+
+                pending_data.erase(0, newline_pos + 1);
+
+                if (on_message_)
+                    on_message_(message);
+            }
         }
 
         if (on_disconnect_)
@@ -60,6 +70,14 @@ public:
     void send_message(std::string_view message)
     {
         std::lock_guard lock(write_mutex_);
-        asio::write(socket_, asio::buffer(message));
+
+        std::string framed_message(message);
+        framed_message.push_back('\n');
+
+        asio::error_code error;
+        asio::write(socket_, asio::buffer(framed_message), error);
+
+        if (error)
+            std::println("Send error: {}", error.message());
     }
 };
