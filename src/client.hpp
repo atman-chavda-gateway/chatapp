@@ -7,6 +7,7 @@
 #include <print>
 #include <string_view>
 #include <utility>
+#include <string>
 
 class Client
 {
@@ -14,13 +15,14 @@ private:
     asio::ip::tcp::socket socket_;
     std::move_only_function<void(Client*)> on_disconnect_; // C++23 upgrade
     std::mutex write_mutex_;
-    std::move_only_function<void(std::string_view)> on_message_;
+    std::move_only_function<void(std::string_view, std::string_view)> on_message_;
+    std::string username_;
 
 public:
     Client(
         asio::ip::tcp::socket socket,
         std::move_only_function<void(Client*)> on_disconnect,
-        std::move_only_function<void(std::string_view)> on_message
+        std::move_only_function<void(std::string_view, std::string_view)> on_message
         ) : 
         socket_(std::move(socket)),
         on_disconnect_(std::move(on_disconnect)),
@@ -28,8 +30,14 @@ public:
     {
     }
 
+    const std::string& username() const
+    {
+        return username_;
+    }
+
     void start_reading()
     {
+        bool username_received = false;
         std::array<char, 1024> buffer; // Safer modern C++ array
         std::string pending_data;
 
@@ -58,8 +66,16 @@ public:
 
                 pending_data.erase(0, newline_pos + 1);
 
+                if (!username_received)
+                {
+                    username_ = message;
+                    username_received = true;
+                    std::println("Username set to: {}", username_);
+                    continue;
+                }
+
                 if (on_message_)
-                    on_message_(message);
+                    on_message_(username_, message);
             }
         }
 

@@ -43,8 +43,10 @@ int main()
                 );
             },
 
-            [&clients, &clients_mutex, &broadcast_mutex](std::string_view message)
+            [&clients, &clients_mutex, &broadcast_mutex](std::string_view username, std::string_view message)
             {
+                std::string formatted_message = std::string(username) + ": " + std::string(message);
+
                 std::lock_guard broadcast_lock(broadcast_mutex);
                 
                 std::vector<std::shared_ptr<Client>> recipients;
@@ -56,7 +58,7 @@ int main()
                 
                 for(const auto& recipient : recipients)
                 {
-                    recipient->send_message(message);
+                    recipient->send_message(formatted_message);
                 }
             }
         );
