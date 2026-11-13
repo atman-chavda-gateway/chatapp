@@ -13,7 +13,7 @@
 class Client
 {
 public:
-    using ConnectCallback = std::move_only_function<void(std::shared_ptr<Client>)>;
+    using ConnectCallback = std::move_only_function<bool(std::shared_ptr<Client>)>;
     using MessageCallback = std::move_only_function<void(std::string_view, std::string_view)>;
     using DisconnectCallback = std::move_only_function<void(std::shared_ptr<Client>)>;
 
@@ -79,10 +79,14 @@ public:
                 if (!username_received)
                 {
                     username_ = message;
+                    
+                    if (on_connect_ && !on_connect_(self))
+                    {
+                        break;
+                    }
                     username_received = true;
-                    if (on_connect_)
-                        on_connect_(self);
                     std::println("Username set to: {}", username_);
+                    
                     continue;
                 }
 

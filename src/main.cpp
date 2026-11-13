@@ -32,14 +32,37 @@ int main()
         auto client = std::make_shared<Client>(
             std::move(socket),
 
-            [&clients, &clients_mutex](std::shared_ptr<Client> connected)
+            [&clients, &clients_mutex](std::shared_ptr<Client> connected) -> bool    
             {
-                std::lock_guard lock(clients_mutex);
+                const std::string& name = connected->username();
+                
+                if(name.empty())
+                {
+                    std::println("Rejected client: empty username");
+                    return false;
+                }
 
-                std::string name = connected->username();
-                clients.push_back(std::move(connected));
+                if(name.size() > 20)
+                {
+                    std::println("Rejected client: username too long");
+                    return false;
+                }
 
-                std::println("Client connected: {}. Total: {}", name, clients.size());
+                {
+                    std::lock_guard lock(clients_mutex);
+
+                    for(const auto& client : clients)
+                    {
+                        if(client->username() == name)
+                        {
+                            std::println("Rejected client: username already taken");
+                            return false;
+                        }
+                    }
+                    clients.push_back(std::move(connected));
+                    std::println("Client connected: {}. Total: {}", name, clients.size());
+                }                
+                return true;
             },
 
             [&clients, &clients_mutex, &broadcast_mutex](std::string_view username, std::string_view message)
@@ -65,12 +88,15 @@ int main()
             {
                 std::lock_guard lock(clients_mutex);
 
-                std::erase(clients, disconnected);
+                const auto removed = std::erase(clients, disconnected);
 
-                std::println(
-                    "Client removed. Remaining: {}",
-                    clients.size()
-                );
+                if(removed > 0)
+                {
+                    std::println(
+                        "Client removed. Remaining: {}",
+                        clients.size()
+                    );
+                }
             }
         );
 
