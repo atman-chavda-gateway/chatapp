@@ -6,19 +6,24 @@
 #include <string_view>
 #include <iostream>
 
-int main()
+int main(int argc, char* argv[])
 {
 
+    if (argc != 2)
+    {
+        std::println("Usage: chatapp-client <username>");
+        return 1;
+    }
+
     asio::io_context io;
+    std::string username = argv[1];
+    std::string message = username + "\n";
 
     asio::ip::tcp::socket socket(io);
 
     asio::ip::tcp::endpoint server(asio::ip::make_address("127.0.0.1"), 8080);
 
     socket.connect(server);
-
-    std::string username = "atman";
-    std::string message = username + "\n";
 
     asio::write(socket, asio::buffer(message));
 
@@ -60,7 +65,7 @@ int main()
     asio::error_code error;
     socket.shutdown(asio::ip::tcp::socket::shutdown_both, error);
     socket.close(error);
-    
+
     receiver.join();
 
     return 0;
