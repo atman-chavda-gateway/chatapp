@@ -50,7 +50,9 @@ target_compile_definitions(asio INTERFACE
 
 # Client executable
 add_executable(chatapp-client
+    src/main.cpp
     src/ui.cpp
+    src/network_client.cpp
 )
 
 target_link_libraries(chatapp-client PRIVATE
