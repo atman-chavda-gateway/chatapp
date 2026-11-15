@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
+# Asio
 FetchContent_Declare(
     asio
     URL https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-36-0.zip
@@ -21,8 +22,20 @@ if(NOT asio_POPULATED)
     FetchContent_MakeAvailable(asio)
 endif()
 
+# FTXUI
+FetchContent_Declare(
+    ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+    GIT_TAG v6.1.9
+    GIT_PROGRESS TRUE
+)
+
+FetchContent_MakeAvailable(ftxui)
+
+# Threads
 find_package(Threads REQUIRED)
 
+# Asio interface library
 add_library(asio INTERFACE)
 
 target_include_directories(asio SYSTEM INTERFACE
@@ -35,13 +48,17 @@ target_compile_definitions(asio INTERFACE
     ASIO_NO_DEPRECATED
 )
 
+# Client executable
 add_executable(chatapp-client
-    src/main.cpp
+    src/ui.cpp
 )
 
 target_link_libraries(chatapp-client PRIVATE
     asio
     Threads::Threads
+    ftxui::component
+    ftxui::dom
+    ftxui::screen
     stdc++exp
     ws2_32
     mswsock
