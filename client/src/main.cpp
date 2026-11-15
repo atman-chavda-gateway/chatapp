@@ -1,4 +1,5 @@
 #include <asio.hpp>
+#include <atomic>
 #include <print>
 #include <string>
 #include <thread>
@@ -15,19 +16,30 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    asio::io_context io;
     std::string username = argv[1];
     std::string message = username + "\n";
-
+    
+    asio::io_context io;
+    asio::error_code error;
     asio::ip::tcp::socket socket(io);
+    std::atomic<bool> connected = true;
 
     asio::ip::tcp::endpoint server(asio::ip::make_address("127.0.0.1"), 8080);
 
-    socket.connect(server);
+    socket.connect(server, error);
+
+    if (error)
+    {
+        std::println("Failed to connect: {}", error.message());
+        return 1;
+    }
 
     asio::write(socket, asio::buffer(message));
+    
 
-    std::jthread receiver([&socket]()
+    std::println("{} Connected to server", username);
+
+    std::jthread receiver([&socket, &connected]()
     {
         std::array<char, 1024> buffer;
 
@@ -42,6 +54,8 @@ int main(int argc, char* argv[])
 
             if (error)
             {
+                connected = false;
+                std::println("Server disconnected");
                 break;
             }
 
@@ -54,15 +68,25 @@ int main(int argc, char* argv[])
 
     while (std::getline(std::cin, message))
     {
+        if (!connected)
+            break;
+    
         if (message == "/quit")
             break;
-
+    
         std::string outgoing = message + "\n";
+    
+        asio::error_code error;
+        asio::write(socket, asio::buffer(outgoing), error);
+    
+        if (error)
+        {
+            connected = false;
+            std::println("Failed to send: {}", error.message());
+            break;
+        }
+    } 
 
-        asio::write(socket, asio::buffer(outgoing));
-    }   
-
-    asio::error_code error;
     socket.shutdown(asio::ip::tcp::socket::shutdown_both, error);
     socket.close(error);
 
