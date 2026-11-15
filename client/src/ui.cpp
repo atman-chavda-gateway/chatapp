@@ -45,6 +45,10 @@ void run_ui(
     std::string network_status = "Connected";
     std::vector<std::string> messages;
 
+    int selected_message = 0;
+
+    bool follow_latest = true;
+
     int cursor_position = 0;
     Box input_box;
 
@@ -60,154 +64,217 @@ void run_ui(
         input_option
     );
 
+    // -------------------- History component --------------------
+
+    MenuOption menu_option;
+    menu_option.on_enter = [] {};
+
+    Component chat_history = Menu(
+        &messages,
+        &selected_message,
+        menu_option
+    );
+
     // -------------------- UI component --------------------
 
-    Component component = Renderer(input, [&]
+    
+Component component = Renderer(input, [&]
+{
+    return vbox({
+        text(" CHATAPP ") | bold | center,
+
+        text(
+            " Connected as: " +
+            std::string(username) +
+            " | " +
+            network_status
+        ) | dim,
+
+        separator(),
+
+        chat_history->Render()
+            | vscroll_indicator
+            | frame
+            | flex
+            | border,
+
+        hbox({
+            text(" Message: "),
+            input->Render() | flex | reflect(input_box),
+        }) | border,
+
+        text(
+            " Enter: Send | Shift+Enter: Newline | "
+            "Ctrl+W: Delete Word | PageUp/Down: Scroll | Ctrl+C: Exit "
+        ) | dim,
+    }) | border;
+}) | CatchEvent([&](Event event)
+{
+    // 1. Process incoming messages and status updates.
+    if (event == Event::Custom)
     {
-        Elements chat_messages;
+        UiEvent incoming;
 
-        for (const auto& msg : messages)
-            chat_messages.push_back(paragraph(msg));
+        while (network.try_pop_event(incoming))
+        {
+            if (incoming.is_status)
+            {
+                network_status = std::move(incoming.text);
+            }
+            else
+            {
+                const bool was_at_bottom =
+                    messages.empty() ||
+                    selected_message >=
+                        static_cast<int>(messages.size()) - 1;
 
-        return vbox({
-            text(" CHATAPP ") | bold | center,
+                messages.push_back(std::move(incoming.text));
 
-            text(
-                " Connected as: " +
-                std::string(username) +
-                " | " +
-                network_status
-            ) | dim,
+                if (follow_latest && was_at_bottom)
+                {
+                    selected_message =
+                        static_cast<int>(messages.size()) - 1;
+                }
+            }
+        }
 
-            separator(),
+        return true;
+    }
 
-            vbox(std::move(chat_messages)) | flex | border,
-
-            hbox({
-                text(" Message: "),
-                input->Render() | flex | reflect(input_box),
-            }) | border,
-
-            text(
-                " Enter: Send | Shift+Enter: Newline | "
-                "Ctrl+W: Delete Word | Ctrl+C: Exit "
-            ) | dim,
-        }) | border;
-    }) | CatchEvent([&](Event event)
+    // 2. PageUp: scroll backwards through chat history.
+    if (event == Event::PageUp)
     {
-        // 1. Process messages and status updates from NetworkClient.
-        if (event == Event::Custom)
+        if (!messages.empty())
         {
-            UiEvent incoming;
+            selected_message = std::max(
+                0,
+                selected_message - 5
+            );
 
-            while (network.try_pop_event(incoming))
-            {
-                if (incoming.is_status)
-                    network_status = std::move(incoming.text);
-                else
-                    messages.push_back(std::move(incoming.text));
-            }
+            follow_latest = false;
+        }
 
+        return true;
+    }
+
+    // 3. PageDown: scroll forwards through chat history.
+    if (event == Event::PageDown)
+    {
+        if (!messages.empty())
+        {
+            const int last_message =
+                static_cast<int>(messages.size()) - 1;
+
+            selected_message = std::min(
+                last_message,
+                selected_message + 5
+            );
+
+            follow_latest =
+                selected_message == last_message;
+        }
+
+        return true;
+    }
+
+    // 4. Ctrl+W: delete the word immediately before the cursor.
+    if (event == Event::CtrlW)
+    {
+        if (message.empty() || cursor_position <= 0)
+            return true;
+
+        std::size_t pos = std::min(
+            static_cast<std::size_t>(cursor_position),
+            message.size()
+        );
+
+        const std::size_t start_pos = pos;
+
+        // Skip whitespace before the word.
+        while (pos > 0 &&
+               (message[pos - 1] == ' ' ||
+                message[pos - 1] == '\n' ||
+                message[pos - 1] == '\t'))
+        {
+            --pos;
+        }
+
+        // Skip the word itself.
+        while (pos > 0 &&
+               message[pos - 1] != ' ' &&
+               message[pos - 1] != '\n' &&
+               message[pos - 1] != '\t')
+        {
+            --pos;
+        }
+
+        const std::size_t chars_to_delete = start_pos - pos;
+
+        for (std::size_t i = 0; i < chars_to_delete; ++i)
+            input->OnEvent(Event::Backspace);
+
+        return true;
+    }
+
+    // 5. Enter sends; Shift+Enter inserts a newline.
+    if (event == Event::Return)
+    {
+        if (IsShiftPressed())
+            return input->OnEvent(Event::Return);
+
+        // Ignore empty or whitespace-only messages.
+        if (message.find_first_not_of(" \n\r\t") == std::string::npos)
+            return true;
+
+        if (!network.connected())
+        {
+            network_status = "Disconnected";
             return true;
         }
 
-        // 2. Ctrl+W: delete the word immediately before the cursor.
-        if (event == Event::CtrlW)
+        if (!network.send_message(message))
         {
-            if (message.empty() || cursor_position <= 0)
-                return true;
-
-            std::size_t pos = std::min(
-                static_cast<std::size_t>(cursor_position),
-                message.size()
-            );
-
-            const std::size_t start_pos = pos;
-
-            // Skip whitespace before the word.
-            while (pos > 0 &&
-                   (message[pos - 1] == ' ' ||
-                    message[pos - 1] == '\n' ||
-                    message[pos - 1] == '\t'))
-            {
-                --pos;
-            }
-
-            // Skip the word itself.
-            while (pos > 0 &&
-                   message[pos - 1] != ' ' &&
-                   message[pos - 1] != '\n' &&
-                   message[pos - 1] != '\t')
-            {
-                --pos;
-            }
-
-            const std::size_t chars_to_delete = start_pos - pos;
-
-            for (std::size_t i = 0; i < chars_to_delete; ++i)
-                input->OnEvent(Event::Backspace);
-
+            network_status = "Send failed";
             return true;
         }
 
-        // 3. Enter sends; Shift+Enter inserts a newline.
-        if (event == Event::Return)
-        {
-            if (IsShiftPressed())
-                return input->OnEvent(Event::Return);
+        // The server broadcasts messages back to their sender.
+        // Don't add a local copy.
+        message.clear();
+        cursor_position = 0;
 
-            // Ignore empty or whitespace-only messages.
-            if (message.find_first_not_of(" \n\r\t") == std::string::npos)
-                return true;
+        return true;
+    }
 
-            if (!network.connected())
-            {
-                network_status = "Disconnected";
-                return true;
-            }
+    // 6. Auto-wrap when typing beyond the available input width.
+    if (event.is_character())
+    {
+        const int usable_width = std::max(
+            1,
+            (input_box.x_max - input_box.x_min) - 1
+        );
 
-            if (!network.send_message(message))
-            {
-                network_status = "Send failed";
-                return true;
-            }
+        const std::size_t pos = std::min(
+            static_cast<std::size_t>(cursor_position),
+            message.size()
+        );
 
-            // The server broadcasts messages back to their sender.
-            // Therefore, we don't add a local copy here.
-            message.clear();
-            cursor_position = 0;
+        const std::size_t last_newline = (pos == 0)
+            ? std::string::npos
+            : message.rfind('\n', pos - 1);
 
-            return true;
-        }
+        const std::size_t current_line_len =
+            (last_newline == std::string::npos)
+                ? pos
+                : pos - last_newline - 1;
 
-        // 4. Auto-wrap when typing beyond the available input width.
-        if (event.is_character())
-        {
-            const int usable_width = std::max(
-                1,
-                (input_box.x_max - input_box.x_min) - 1
-            );
+        if (static_cast<int>(current_line_len) >= usable_width)
+            input->OnEvent(Event::Return);
+    }
 
-            const std::size_t pos = std::min(
-                static_cast<std::size_t>(cursor_position),
-                message.size()
-            );
+    return false;
+});
 
-            const std::size_t last_newline = (pos == 0)
-                ? std::string::npos
-                : message.rfind('\n', pos - 1);
-
-            const std::size_t current_line_len =
-                (last_newline == std::string::npos)
-                    ? pos
-                    : pos - last_newline - 1;
-
-            if (static_cast<int>(current_line_len) >= usable_width)
-                input->OnEvent(Event::Return);
-        }
-
-        return false;
-    });
 
     // -------------------- Run UI --------------------
 
