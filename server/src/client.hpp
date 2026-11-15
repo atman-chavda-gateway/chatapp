@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <asio.hpp>
@@ -25,6 +26,59 @@ private:
 
     std::mutex write_mutex_;
     std::string username_;
+
+    // Convert special characters into a single-line wire representation.
+    static std::string encode_message(std::string_view message)
+    {
+        std::string encoded;
+        encoded.reserve(message.size());
+
+        for (char ch : message)
+        {
+            if (ch == '\\')
+                encoded += "\\\\";
+            else if (ch == '\n')
+                encoded += "\\n";
+            else
+                encoded += ch;
+        }
+
+        return encoded;
+    }
+
+    // Restore special characters after receiving a complete frame.
+    static std::string decode_message(std::string_view message)
+    {
+        std::string decoded;
+        decoded.reserve(message.size());
+
+        for (std::size_t i = 0; i < message.size(); ++i)
+        {
+            if (message[i] == '\\' && i + 1 < message.size())
+            {
+                if (message[i + 1] == 'n')
+                {
+                    decoded += '\n';
+                    ++i;
+                }
+                else if (message[i + 1] == '\\')
+                {
+                    decoded += '\\';
+                    ++i;
+                }
+                else
+                {
+                    decoded += message[i];
+                }
+            }
+            else
+            {
+                decoded += message[i];
+            }
+        }
+
+        return decoded;
+    }
 
 public:
     Client(
@@ -72,23 +126,23 @@ public:
 
             while ((newline_pos = pending_data.find('\n')) != std::string::npos)
             {
-                std::string message = pending_data.substr(0, newline_pos);
-
+                std::string frame = pending_data.substr(0, newline_pos);
                 pending_data.erase(0, newline_pos + 1);
 
                 if (!username_received)
                 {
-                    username_ = message;
-                    
+                    username_ = frame;
+
                     if (on_connect_ && !on_connect_(self))
-                    {
-                        break;
-                    }
+                        return;
+
                     username_received = true;
                     std::println("Username set to: {}", username_);
-                    
+
                     continue;
                 }
+
+                std::string message = decode_message(frame);
 
                 if (on_message_)
                     on_message_(username_, message);
@@ -103,7 +157,7 @@ public:
     {
         std::lock_guard lock(write_mutex_);
 
-        std::string framed_message(message);
+        std::string framed_message = encode_message(message);
         framed_message.push_back('\n');
 
         asio::error_code error;
