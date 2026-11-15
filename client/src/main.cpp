@@ -1,12 +1,13 @@
 #include <asio.hpp>
 #include <print>
 #include <string>
+#include <thread>
 #include <array>
 #include <string_view>
+#include <iostream>
 
 int main()
 {
-    std::array<char, 1024> buffer;
 
     asio::io_context io;
 
@@ -21,10 +22,46 @@ int main()
 
     asio::write(socket, asio::buffer(message));
 
-    std::size_t bytes_received = socket.read_some(
-        asio::buffer(buffer)
-    );
+    std::jthread receiver([&socket]()
+    {
+        std::array<char, 1024> buffer;
 
-    std::println("Server: {}", std::string_view(buffer.data(), bytes_received));
+        while (true)
+        {
+            asio::error_code error;
+
+            std::size_t bytes_received = socket.read_some(
+                asio::buffer(buffer),
+                error
+            );
+
+            if (error)
+            {
+                break;
+            }
+
+            std::println(
+                "{}",
+                std::string_view(buffer.data(), bytes_received)
+            );
+        }
+    });
+
+    while (std::getline(std::cin, message))
+    {
+        if (message == "/quit")
+            break;
+
+        std::string outgoing = message + "\n";
+
+        asio::write(socket, asio::buffer(outgoing));
+    }   
+
+    asio::error_code error;
+    socket.shutdown(asio::ip::tcp::socket::shutdown_both, error);
+    socket.close(error);
+    
+    receiver.join();
+
     return 0;
 }
