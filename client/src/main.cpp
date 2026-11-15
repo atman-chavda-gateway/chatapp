@@ -34,7 +34,13 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    asio::write(socket, asio::buffer(message));
+    asio::write(socket, asio::buffer(message), error);
+
+    if (error)
+    {
+        std::println("Failed to send username: {}", error.message());
+        return 1;
+    }
     
 
     std::println("{} Connected to server", username);
@@ -76,7 +82,6 @@ int main(int argc, char* argv[])
     
         std::string outgoing = message + "\n";
     
-        asio::error_code error;
         asio::write(socket, asio::buffer(outgoing), error);
     
         if (error)
@@ -85,7 +90,7 @@ int main(int argc, char* argv[])
             std::println("Failed to send: {}", error.message());
             break;
         }
-    } 
+    }
 
     socket.shutdown(asio::ip::tcp::socket::shutdown_both, error);
     socket.close(error);
